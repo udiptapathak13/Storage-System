@@ -16,6 +16,9 @@
         "streambuf": "cpp",
         "utility": "cpp",
         "iostream": "cpp",
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "bitset": "cpp",
+        "optional": "cpp",
+        "system_error": "cpp"
     }
 }
