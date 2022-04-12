@@ -1,16 +1,22 @@
 #ifndef _LSM_HPP
 #define _LSM_HPP
 
+#include <algorithm>
 #include <utility>
 #include <vector>
+
+using namespace std;
+
+#define MAX_MSIZE 10
+
+void *buff;
 
 template <typename P, typename Q>
 class memtable {
     public:
-        pair<P, Q> *buff;
-        memtable(unsigned max_size);
+        memtable();
         void insert(P key, Q val);
-        Q select(P key);
+        pair<Q, bool> select(P key);
         bool full();
         void flush();
         unsigned capacity();
@@ -20,8 +26,8 @@ class memtable {
 };
 
 template <typename P, typename Q>
-memtable<P, Q>::memtable(unsigned max_size) {
-    this->max_size = max_size;
+memtable<P, Q>::memtable() {
+    this->max_size = MAX_MSIZE;
     arr = new pair<P, Q>[max_size];
     buff = new pair<P, Q>[max_size];
     curr_size = 0;
@@ -35,12 +41,11 @@ void memtable<P, Q>::insert(P key, Q val) {
 }
 
 template <typename P, typename Q>
-Q memtable<P, Q>::select(P key) {
+pair<Q, bool> memtable<P, Q>::select(P key) {
     Q val;
-    for(int i = 0 ; i  < curr_size ; i++)
-        if(arr[i].first == key) return arr[i].second;
-    sflag = false;
-    return val;
+    for(int i = curr_size - 1; i >= 0 ; i--)
+        if(arr[i].first == key) return {arr[i].second, true};
+    return {val, false};
 }
 
 template <typename P, typename Q>
@@ -50,8 +55,8 @@ bool memtable<P, Q>::full() {
 
 template <typename P, typename Q>
 void memtable<P, Q>::flush() {
-    sort(arr, arr + max_size);
-    for(int i =  ; i < max_size ; i++) buff[i] = arr[i];
+    stable_sort(arr, arr + max_size, [](pair<P, Q> p, pair<P, Q> q) {return p.first < q.first;});
+    for(int i = 0 ; i < max_size ; i++) ((pair<P, Q> *) buff)[i] = arr[i];
     curr_size = 0;
 }
 
@@ -63,70 +68,83 @@ unsigned memtable<P, Q>::capacity() {
 template <typename P, typename Q>
 class disk {
     public:
+        disk();
         void insert();
-        Q select(P key);
+        pair<Q, bool> select(P key);
         int binarysearch(pair<P, Q> *sstable, P target);
         vector<pair<P, Q> *> ss;
+    private:
+        unsigned msize;
 };
 
 template <typename P, typename Q>
+disk<P, Q>::disk() {
+    msize = MAX_MSIZE;
+}
+
+template <typename P, typename Q>
 void disk<P, Q>::insert() {
-    static int n = mt.capacity();
+    static int n = msize;
     pair<P, Q> *sstable = new pair<P, Q>[n];
-    for(int i = 0 ; i < n ; i++) sstable[i] = mt.buff[i];
+    for(int i = 0 ; i < n ; i++) {sstable[i] = ((pair<P, Q> *) buff)[i]; cout<<"("<<sstable[i].first<<","<<sstable[i].second<<")";} cout<<endl;
     ss.push_back(sstable);
 }
 
 template <typename P, typename Q>
 int disk<P, Q>::binarysearch(pair<P, Q> *sstable, P target) {
-    int l = 0, r = mt.capacity() - 1, m;
-    while(l < r) {
-        m = (l + r) >> 1;
-        if(sstable[m].first == target) return m;
+    int l = 0, r = msize - 1, m;
+    while(l <= r) {
+        m = ((l + r) >> 1) + 1;
+        if(sstable[r].first == target) return r;
         else if(sstable[m].first > target) r = m - 1;
-        else l = m + 1;
+        else if(sstable[m].first < target) l = m + 1;
+        else l = m;
     }
-    return -1
+    return -1;
 }
 
 template <typename P, typename Q>
-Q disk<P, Q>::select(P key) {
+pair<Q, bool> disk<P, Q>::select(P key) {
     Q val; int i;
     for(auto it = ss.rbegin() ; it != ss.rend() ; it++) {
-        if((i = binarysearch(*it)) != -1) return *it[i].second;
-    } sflag = false;
-    return val;
+        if((i = binarysearch(*it, key)) != -1) return {(*it)[i].second, true};
+    }
+    return {val, false};
 }
 
 template <typename P, typename Q>
 class lsm {
     public:
+        lsm();
         void insert(P key, Q val);
         Q select(P key);
     private:
-        bool sflag;
         memtable<P, Q> mt;
         disk<P, Q> dk;
-    friend class disk;
-    friend class memtable;
+    friend class disk<P, Q>;
+    friend class memtable<P, Q>;
 };
+
+template <typename P, typename Q>
+lsm<P, Q>::lsm() {
+    
+}
 
 template <typename P, typename Q>
 void lsm<P, Q>::insert(P key, Q val) {
     if(mt.full()) {
         mt.flush();
-        dk.insert():
+        dk.insert();
     }
     mt.insert(key, val);
 }
 
 template <typename P, typename Q>
 Q lsm<P, Q>::select(P key) {
-    Q val;
-    sflag = true;
-    val = mt.search(key);
-    if(!sflag) val = dk.search(key);
-    return val;
+    pair<Q, bool> val;
+    val = mt.select(key);
+    if(!val.second) val = dk.select(key);
+    return val.first;
 }
 
 #endif
