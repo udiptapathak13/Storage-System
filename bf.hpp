@@ -12,6 +12,7 @@ template <typename P>
 class bf {
     public:
         bf();
+        bf& clear();
         bf& insert(P key);
         bool lookup(P key);
     private:
@@ -22,6 +23,12 @@ class bf {
 template <typename P>
 bf<P>::bf() {
     bit_count = MAX_BIT_SIZE;
+}
+
+template <typename P>
+bf<P>& bf<P>::clear() {
+    bset.reset();
+    return *this;
 }
 
 template <typename P>

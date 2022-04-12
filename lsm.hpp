@@ -2,8 +2,10 @@
 #define _LSM_HPP
 
 #include <algorithm>
+#include <thread>
 #include <utility>
 #include <vector>
+#include "bf.hpp"
 
 using namespace std;
 
@@ -82,8 +84,8 @@ class disk {
         disk();
         void insert();
         pair<Q, bool> select(P key);
-        int binarysearch(pair<P, Q*> *sstable, P target);
-        vector<pair<P, Q*> *> ss;
+        int binarysearch(vector<pair<P, Q*>> sstable, P target);
+        vector<vector<pair<P, Q*>>> ss;
     private:
         unsigned msize;
 };
@@ -96,14 +98,14 @@ disk<P, Q>::disk() {
 template <typename P, typename Q>
 void disk<P, Q>::insert() {
     static int n = msize;
-    pair<P, Q*> *sstable = new pair<P, Q*>[n];
-    for(int i = 0 ; i < n ; i++) {sstable[i] = ((pair<P, Q*> *) buff)[i]; if(sstable[i].second) cout<<"("<<sstable[i].first<<","<<*sstable[i].second<<")"; else cout<<"fuck ";} cout<<endl;
+    vector<pair<P, Q*>> sstable;
+    for(int i = 0 ; i < n ; i++) sstable.push_back(((pair<P, Q*> *) buff)[i]);
     ss.push_back(sstable);
 }
 
 template <typename P, typename Q>
-int disk<P, Q>::binarysearch(pair<P, Q*> *sstable, P target) {
-    int l = 0, r = msize - 1, m;
+int disk<P, Q>::binarysearch(vector<pair<P, Q*>> sstable, P target) {
+    int l = 0, r = sstable.size() - 1, m;
     while(l <= r) {
         m = ((l + r) >> 1) + 1;
         if(sstable[r].first == target) return sstable[r].second ? r : -1;
@@ -131,13 +133,44 @@ class lsm {
         void remove(P key);
         Q select(P key);
     private:
+        void operator() ();
         memtable<P, Q> mt;
         disk<P, Q> dk;
 };
 
 template <typename P, typename Q>
+void lsm<P, Q>::operator() () {
+    int n = dk.ss.size();
+    if(n < 3) return;
+    int len1 = dk.ss[n].size(), len2 = dk.ss[n - 1].size();
+    vector<pair<P, Q>> v, dv;
+    bf<P> b, db;
+    for(int i = len2 ; i >= 0 ; i--) {
+        if(!b.lookup(dk.ss[n - 1][i].first)) {
+            b.insert(dk.ss[n - 1][i].first);
+            v.push_back(dk.ss[n - 1][i]);
+        } else {
+            if(dk.binarysearch(v, dk.ss[n - 1][i]) == -1) {
+                b.insert(dk.ss[n - 1][i].first);
+                if(dk.ss[n - 1][i].second) v.push_back(dk.ss[n - 1][i]);
+                else {
+                    if(db.lookup(dk.ss[n - 1][i].first)) {
+                        if(dk.binarysearch(dv, dk.ss[n - 1][i].first == -1)) {
+                            dv.push_back(dk.ss[n - 1][i].first);
+                        }
+                    } else {
+                        db.insert(dk.ss[n - 1][i].first);
+                        dv.push_back(dk.ss[n - 1][i].first);
+                    }
+                }
+            }
+        }
+    }
+}  
+
+template <typename P, typename Q>
 lsm<P, Q>::lsm() {
-    
+    thread compact(lsm());
 }
 
 template <typename P, typename Q>
