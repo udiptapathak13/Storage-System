@@ -84,7 +84,6 @@ class disk {
         disk();
         void insert();
         pair<Q, bool> select(P key);
-        int binarysearch(vector<pair<P, Q*>> sstable, P target);
         vector<vector<pair<P, Q*>>> ss;
     private:
         unsigned msize;
@@ -99,28 +98,31 @@ template <typename P, typename Q>
 void disk<P, Q>::insert() {
     static int n = msize;
     vector<pair<P, Q*>> sstable;
-    for(int i = 0 ; i < n ; i++) sstable.push_back(((pair<P, Q*> *) buff)[i]);
+    bf<P> b;
+    for(int i = n - 1 ; i >= 0 ; i--) 
+        if(!b.lookup(((pair<P, Q*> *) buff)[i].first)) {
+            b.insert(((pair<P, Q*> *) buff)[i].first);
+            sstable.push_back(((pair<P, Q*> *) buff)[i]);
+        } else {
+            if(!binary_search(sstable.begin(), sstable.end(), ((pair<P, Q*> *) buff)[i], 
+                [](pair<P, Q*> p, pair<P, Q*> q) {return p.first > q.first;}))
+                sstable.push_back(((pair<P, Q*> *) buff)[i]);
+        }
+    reverse(sstable.begin(), sstable.end());
     ss.push_back(sstable);
 }
 
 template <typename P, typename Q>
-int disk<P, Q>::binarysearch(vector<pair<P, Q*>> sstable, P target) {
-    int l = 0, r = sstable.size() - 1, m;
-    while(l <= r) {
-        m = ((l + r) >> 1) + 1;
-        if(sstable[r].first == target) return sstable[r].second ? r : -1;
-        else if(sstable[m].first > target) r = m - 1;
-        else if(sstable[m].first < target) l = m + 1;
-        else l = m;
-    }
-    return -1;
-}
-
-template <typename P, typename Q>
 pair<Q, bool> disk<P, Q>::select(P key) {
-    Q val; int i;
+    Q val; int l, r, m;
     for(auto it = ss.rbegin() ; it != ss.rend() ; it++) {
-        if((i = binarysearch(*it, key)) != -1) return {*(*it)[i].second, true};
+        l = 0; r = (*it).size() - 1;
+        while(l <= r) {
+            m = (l + r) >> 1;
+            if((*it)[m].first == key) return {*(*it)[m].second, true};
+            else if((*it)[m].first > key) r = m - 1;
+            else l = m + 1;
+        }
     }
     return {val, false};
 }
@@ -140,37 +142,31 @@ class lsm {
 
 template <typename P, typename Q>
 void lsm<P, Q>::operator() () {
-    int n = dk.ss.size();
-    if(n < 3) return;
+    int n = dk.ss.size() - 1;
+    if(n < 2) return;
     int len1 = dk.ss[n].size(), len2 = dk.ss[n - 1].size();
-    vector<pair<P, Q>> v, dv;
-    bf<P> b, db;
+    vector<pair<P, Q>> v;
+    bf<P> b;
     for(int i = len2 ; i >= 0 ; i--) {
         if(!b.lookup(dk.ss[n - 1][i].first)) {
             b.insert(dk.ss[n - 1][i].first);
             v.push_back(dk.ss[n - 1][i]);
-        } else {
-            if(dk.binarysearch(v, dk.ss[n - 1][i]) == -1) {
-                b.insert(dk.ss[n - 1][i].first);
-                if(dk.ss[n - 1][i].second) v.push_back(dk.ss[n - 1][i]);
-                else {
-                    if(db.lookup(dk.ss[n - 1][i].first)) {
-                        if(dk.binarysearch(dv, dk.ss[n - 1][i].first == -1)) {
-                            dv.push_back(dk.ss[n - 1][i].first);
-                        }
-                    } else {
-                        db.insert(dk.ss[n - 1][i].first);
-                        dv.push_back(dk.ss[n - 1][i].first);
-                    }
-                }
-            }
-        }
+        } else if(dk.binarysearch(v, dk.ss[n - 1][i]) == -1)
+                v.push_back(dk.ss[n - 1][i]);
     }
+    for(int i = len2 ; i >= 0 ; i--) {
+        if(!b.lookup(dk.ss[n][i].first)) {
+            b.insert(dk.ss[n][i].first);
+            v.push_back(dk.ss[n][i]);
+        } else if(dk.binarysearch(v, dk.ss[n][i]) == -1)
+                v.push_back(dk.ss[n][i]);
+    } dk.ss.erase(dk.ss.begin() + n);
+    dk.ss[n - 1] = v;
 }  
 
 template <typename P, typename Q>
 lsm<P, Q>::lsm() {
-    thread compact(lsm());
+    // thread compact(lsm());
 }
 
 template <typename P, typename Q>
