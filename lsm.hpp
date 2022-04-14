@@ -119,8 +119,11 @@ pair<Q, bool> disk<P, Q>::select(P key) {
         l = 0; r = (*it).size() - 1;
         while(l <= r) {
             m = (l + r) >> 1;
-            if((*it)[m].first == key) return {*(*it)[m].second, true};
-            else if((*it)[m].first > key) r = m - 1;
+            if((*it)[m].first == key) {
+                if((*it)[m].second) return {*(*it)[m].second, true};
+                else return {val, false};
+            }
+            if((*it)[m].first > key) r = m - 1;
             else l = m + 1;
         }
     }
@@ -133,7 +136,7 @@ class lsm {
         lsm();
         void insert(P key, Q val);
         void remove(P key);
-        Q select(P key);
+        pair<Q, bool> select(P key);
     private:
         void operator() ();
         memtable<P, Q> mt;
@@ -166,7 +169,7 @@ void lsm<P, Q>::operator() () {
 
 template <typename P, typename Q>
 lsm<P, Q>::lsm() {
-    // thread compact(lsm());
+    thread compact(lsm());
 }
 
 template <typename P, typename Q>
@@ -184,11 +187,11 @@ void lsm<P, Q>::remove(P key) {
 }
 
 template <typename P, typename Q>
-Q lsm<P, Q>::select(P key) {
+pair<Q, bool> lsm<P, Q>::select(P key) {
     pair<Q, bool> val;
     val = mt.select(key);
     if(!val.second) val = dk.select(key);
-    return val.first;
+    return val;
 }
 
 #endif
